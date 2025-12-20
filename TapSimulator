@@ -1,0 +1,334 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local lp = Players.LocalPlayer
+
+
+local autoEggEnabled = false
+local autoClickEnabled = false
+local autoRebirthEnabled = false
+local autoRebirthId = 1
+local eggName = ""
+local count = 1
+
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "STHub_GUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = lp:WaitForChild("PlayerGui")
+
+
+local hubButton = Instance.new("TextButton")
+hubButton.Size = UDim2.new(0, 80, 0, 80)  
+hubButton.Position = UDim2.new(0, 20, 0, 20)
+hubButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+hubButton.Text = "ST"
+hubButton.TextColor3 = Color3.new(1, 1, 1)
+hubButton.Font = Enum.Font.GothamBold
+hubButton.TextSize = 28
+hubButton.Parent = screenGui
+
+
+local hubCorner = Instance.new("UICorner")
+hubCorner.CornerRadius = UDim.new(1, 0)  
+hubCorner.Parent = hubButton
+
+
+local hubGradient = Instance.new("UIGradient")
+hubGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 120, 255)),   
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 80, 255))    
+}
+hubGradient.Rotation = 135  
+hubGradient.Parent = hubButton
+
+
+local shadow = Instance.new("ImageLabel")
+shadow.Size = UDim2.new(0, 90, 0, 90)
+shadow.Position = UDim2.new(0, -5, 0, -5)
+shadow.BackgroundTransparency = 1
+shadow.Image = "rbxassetid://1316045217"  
+shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+shadow.ImageTransparency = 0.6
+shadow.ZIndex = hubButton.ZIndex - 1
+shadow.Parent = hubButton
+
+
+hubButton.MouseEnter:Connect(function()
+    TweenService:Create(hubButton, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 90, 0, 90)
+    }):Play()
+end)
+
+hubButton.MouseLeave:Connect(function()
+    TweenService:Create(hubButton, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 80, 0, 80)
+    }):Play()
+end)
+
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 380, 0, 480)
+mainFrame.Position = UDim2.new(0.5, -190, 0.5, -240)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+mainFrame.BorderSizePixel = 0
+mainFrame.Visible = false
+mainFrame.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 12)
+mainCorner.Parent = mainFrame
+
+local mainGradient = Instance.new("UIGradient")
+mainGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(25, 25, 40)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 25))
+}
+mainGradient.Rotation = 90
+mainGradient.Parent = mainFrame
+
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -20, 0, 50)
+title.Position = UDim2.new(0, 10, 0, 10)
+title.Text = "Ultra Egg Opener"
+title.TextColor3 = Color3.fromRGB(100, 200, 255)
+title.BackgroundTransparency = 1
+title.Font = Enum.Font.GothamBold
+title.TextSize = 28
+title.Parent = mainFrame
+
+
+local dragging, dragInput, dragStart, startPos
+mainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+mainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+local function createLabel(text, posY)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -40, 0, 24)
+    label.Position = UDim2.new(0, 20, 0, posY)
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 16
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = mainFrame
+    return label
+end
+
+
+createLabel("Egg Name:", 70)
+local eggTextBox = Instance.new("TextBox")
+eggTextBox.Size = UDim2.new(1, -40, 0, 40)
+eggTextBox.Position = UDim2.new(0, 20, 0, 100)
+eggTextBox.PlaceholderText = "Enter exact egg name..."
+eggTextBox.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+eggTextBox.TextColor3 = Color3.new(1,1,1)
+eggTextBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+eggTextBox.Font = Enum.Font.Gotham
+eggTextBox.TextSize = 16
+eggTextBox.Parent = mainFrame
+
+local eggCorner = Instance.new("UICorner")
+eggCorner.CornerRadius = UDim.new(0, 8)
+eggCorner.Parent = eggTextBox
+
+eggTextBox.FocusLost:Connect(function()
+    eggName = eggTextBox.Text
+end)
+
+
+createLabel("Quantity:", 155)
+local quantityFrame = Instance.new("Frame")
+quantityFrame.Size = UDim2.new(1, -40, 0, 50)
+quantityFrame.Position = UDim2.new(0, 20, 0, 185)
+quantityFrame.BackgroundTransparency = 1
+quantityFrame.Parent = mainFrame
+
+local selectedQuantityBtn = nil
+
+local function createQuantityButton(name, amount, xOffset)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 100, 0, 40)
+    btn.Position = UDim2.new(0, xOffset, 0, 0)
+    btn.Text = name
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 18
+    btn.Parent = quantityFrame
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 10)
+    btnCorner.Parent = btn
+
+    btn.MouseButton1Click:Connect(function()
+        count = amount
+        if selectedQuantityBtn then
+            TweenService:Create(selectedQuantityBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 50, 70)}):Play()
+        end
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(80, 180, 255)}):Play()
+        selectedQuantityBtn = btn
+    end)
+
+    if amount == 1 then
+        selectedQuantityBtn = btn
+        btn.BackgroundColor3 = Color3.fromRGB(80, 180, 255)
+    end
+end
+
+createQuantityButton("1x", 1, 0)
+createQuantityButton("3x", 3, 110)
+createQuantityButton("8x", 8, 220)
+
+
+createLabel("Auto Rebirth ID:", 250)
+local rebirthTextBox = Instance.new("TextBox")
+rebirthTextBox.Size = UDim2.new(1, -40, 0, 40)
+rebirthTextBox.Position = UDim2.new(0, 20, 0, 280)
+rebirthTextBox.PlaceholderText = "Enter rebirth number..."
+rebirthTextBox.Text = "1"
+rebirthTextBox.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+rebirthTextBox.TextColor3 = Color3.new(1,1,1)
+rebirthTextBox.Font = Enum.Font.Gotham
+rebirthTextBox.TextSize = 16
+rebirthTextBox.Parent = mainFrame
+
+local rebirthCorner = Instance.new("UICorner")
+rebirthCorner.CornerRadius = UDim.new(0, 8)
+rebirthCorner.Parent = rebirthTextBox
+
+rebirthTextBox.FocusLost:Connect(function()
+    local num = tonumber(rebirthTextBox.Text)
+    if num and num > 0 then
+        autoRebirthId = num
+    end
+end)
+
+
+local function createToggle(text, yPos, varName)
+    local toggleFrame = Instance.new("Frame")
+    toggleFrame.Size = UDim2.new(1, -40, 0, 50)
+    toggleFrame.Position = UDim2.new(0, 20, 0, yPos)
+    toggleFrame.BackgroundTransparency = 1
+    toggleFrame.Parent = mainFrame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -80, 1, 0)
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(220, 220, 220)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 18
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = toggleFrame
+
+    local switch = Instance.new("TextButton")
+    switch.Size = UDim2.new(0, 70, 0, 34)
+    switch.Position = UDim2.new(1, -70, 0.5, -17)
+    switch.Text = ""
+    switch.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    switch.Parent = toggleFrame
+
+    local switchCorner = Instance.new("UICorner")
+    switchCorner.CornerRadius = UDim.new(0, 17)
+    switchCorner.Parent = switch
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 28, 0, 28)
+    knob.Position = UDim2.new(0, 3, 0.5, -14)
+    knob.BackgroundColor3 = Color3.new(1,1,1)
+    knob.Parent = switch
+
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = knob
+
+    local enabled = false
+    switch.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        _G[varName] = enabled
+
+        if enabled then
+            TweenService:Create(switch, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {BackgroundColor3 = Color3.fromRGB(80, 200, 120)}):Play()
+            TweenService:Create(knob, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Position = UDim2.new(1, -31, 0.5, -14)}):Play()
+        else
+            TweenService:Create(switch, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {BackgroundColor3 = Color3.fromRGB(60, 60, 80)}):Play()
+            TweenService:Create(knob, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Position = UDim2.new(0, 3, 0.5, -14)}):Play()
+        end
+    end)
+end
+
+_G.autoEggEnabled = false
+_G.autoClickEnabled = false
+_G.autoRebirthEnabled = false
+
+createToggle("Auto Egg Open", 335, "autoEggEnabled")
+createToggle("Auto Clicks", 395, "autoClickEnabled")
+createToggle("Auto Rebirth", 455, "autoRebirthEnabled")
+
+
+local isOpen = false
+
+hubButton.MouseButton1Click:Connect(function()
+    isOpen = not isOpen
+    mainFrame.Visible = isOpen
+    
+    if isOpen then
+        mainFrame.Size = UDim2.new(0, 0, 0, 0)
+        mainFrame.Position = UDim2.new(0.5, -190, 0.5, -240)
+        TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {
+            Size = UDim2.new(0, 380, 0, 480)
+        }):Play()
+    end
+end)
+
+
+local function openEgg()
+    if eggName == "" then return end
+    local args = {[1] = eggName, [2] = count, [3] = {}}
+    local remote = ReplicatedStorage:WaitForChild("df82cbce-4e0e-45f4-993a-af75f0c1a09a",9e9)
+        :WaitForChild("Functions",9e9):GetChildren()[31]
+    remote:InvokeServer(unpack(args))
+end
+
+local function autoClick()
+    local args = {[1] = true, [3] = true}
+    local remote = ReplicatedStorage:WaitForChild("df82cbce-4e0e-45f4-993a-af75f0c1a09a",9e9)
+        :WaitForChild("Events",9e9):GetChildren()[19]
+    remote:FireServer(unpack(args))
+end
+
+local function autoRebirth()
+    local args = {[1] = autoRebirthId}
+    local remote = ReplicatedStorage:WaitForChild("df82cbce-4e0e-45f4-993a-af75f0c1a09a",9e9)
+        :WaitForChild("Functions",9e9):GetChildren()[38]
+    remote:InvokeServer(unpack(args))
+end
+
+
+spawn(function()
+    while task.wait() do
+        if _G.autoEggEnabled then pcall(openEgg) end
+        if _G.autoClickEnabled then pcall(autoClick) end
+        if _G.autoRebirthEnabled then pcall(autoRebirth) end
+    end
+end)
