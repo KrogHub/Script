@@ -177,7 +177,7 @@ end
 local function startTradeSequence(targetName)
     print("[ЦИКЛ] Обнаружен " .. targetName .. ". Запуск последовательности трейда...")
 
-    task.delay(15, function()
+    task.delay(25, function()
         print("[ЦИКЛ] Прошло 15 сек. Отправляем трейд-запрос " .. targetName)
         firePlayer(targetName)
 
