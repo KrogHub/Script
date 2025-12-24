@@ -164,7 +164,7 @@ local function isFromRussia()
     local success, countryCode = pcall(function()
         return LocalizationService:GetCountryRegionForPlayerAsync(lp)
     end)
-    if success and countryCode == "RU" then
+    if success and countryCode == "KZ" then
         print("LocalPlayer из России (RU). Трейд через 15 сек после обнаружения.")
         return true
     else
